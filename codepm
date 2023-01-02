@@ -1,0 +1,375 @@
+#!/usr/bin/env bash
+
+FGGreen="\e[32m"
+FGYellow="\e[33m"
+FGBlue="\e[34m"
+FGMagenta="\e[35m"
+RESET="\e[0m"
+
+VERSION="1.0.0"
+BASE_PATH="$HOME/.codepm"
+CATEGORIES=("language" "framework" "project")
+
+usage() {
+  echo -e "\
+Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET
+
+Usage: ${FGGreen}codepm$RESET ${FGYellow}[options]$RESET $FGMagenta<path>$RESET
+
+${FGYellow}Commands:$RESET
+  ${FGBlue}n  new$RESET          Create a new profile
+  ${FGBlue}rm remove$RESET       Remove a profile
+  ${FGBlue}ls list$RESET         List all profiles
+
+${FGYellow}Options:$RESET
+  -c --category   Category of the profile
+  -n --name       Name of the profile
+  -p --project    Open editor in project mode
+  -v --version    Print version
+  -h --help       Print usage.
+
+
+$(new_usage)
+
+
+$(remove_usage)
+
+
+$(list_usage)\
+"
+}
+
+new_usage() {
+  echo -e "\
+${FGBlue}new$RESET Usage: ${FGGreen}codepm$RESET ${FGBlue}new$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
+  
+${FGBlue}new$RESET ${FGYellow}Options:$RESET
+  -c --category   Category of the profile
+  -h --help       Print ${FGBlue}new$RESET usage\
+"
+}
+
+remove_usage() {
+  echo -e "\
+${FGBlue}remove$RESET Usage: codepm ${FGBlue}remove$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
+  
+${FGBlue}remove$RESET ${FGYellow}Options:$RESET
+  -c --category   Category of the profile
+  -h --help       Print ${FGBlue}remove$RESET usage\
+"
+}
+
+list_usage() {
+  echo -e "\
+${FGBlue}list$RESET Usage: codepm ${FGBlue}list$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
+  
+${FGBlue}list$RESET ${FGYellow}Options:$RESET
+  -c --category   Category of the profile
+  -h --help       Print ${FGBlue}list$RESET usage\
+"
+}
+
+code() {
+  local PPATH="$BASE_PATH/$1/$2"
+  local PPATH_DATA="$PPATH/data"
+  local PPATH_EXTS="$PPATH/exts"
+  /usr/bin/env code --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA"
+}
+
+select_category() {
+  PS3='Select category: '
+  select opt in "${CATEGORIES[@]}"; do
+    case $opt in
+    *)
+      if [[ -n "$opt" ]]; then
+        echo "$opt"
+        return
+      fi
+      ;;
+    esac
+  done
+  PS3=
+}
+
+select_profile() {
+  PS3='Select profile: '
+  local options=()
+  for p in "$BASE_PATH/$1"/*; do
+    options+=("$(basename "$p")")
+  done
+
+  select opt in "${options[@]}"; do
+    case $opt in
+    *)
+      if [[ -n "$opt" ]]; then
+        echo "$opt"
+        return
+      fi
+      ;;
+    esac
+  done
+  PS3=
+}
+
+read_name() {
+  local NAME=
+  read -p "Enter name: " -r NAME
+  echo "$NAME"
+  return
+}
+
+print_category_profiles() {
+  if [[ ! -d "$BASE_PATH/$1" ]]; then return; fi
+  echo -e "$FGBlue$1$RESET profiles":
+
+  local values=("$BASE_PATH/$1"/*)
+  for p in "${values[@]}"; do
+    echo -n -e "$FGYellow"
+    if [[ "$p" == "${values[-1]}" ]]; then
+      printf ' └ '
+    elif [[ "$p" == "${values[0]}" ]]; then
+      printf ' ┌ '
+    else
+      printf ' ├ '
+    fi
+    echo -n -e "$RESET"
+    basename "$p"
+  done
+}
+
+new() {
+  local CATEGORY=
+  local NAME=
+
+  while true; do
+    if [[ -z "$1" ]]; then
+      break
+    fi
+
+    case "$1" in
+    -h | --help)
+      echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+      echo
+      new_usage
+      return
+      ;;
+    -c | --category)
+      if [[ "$2" == -* ]]; then
+        shift
+      else
+        if [[ "${CATEGORIES[*]}" =~ $2 ]]; then
+          CATEGORY="$2"
+        fi
+        shift 2
+      fi
+      ;;
+    *)
+      if [[ "$1" != -* ]] && [[ -z "$NAME" ]]; then
+        NAME="$1"
+        shift
+      else
+        shift
+        if [[ "$1" != -* ]] && [[ -n "$NAME" ]]; then
+          shift
+        fi
+      fi
+      ;;
+    esac
+  done
+
+  if [[ -z "$CATEGORY" ]]; then
+    CATEGORY=$(select_category)
+  fi
+
+  if [[ -z "$NAME" ]]; then
+    NAME=$(read_name)
+  fi
+
+  local PPATH="$BASE_PATH/$CATEGORY/$NAME"
+  local PPATH_DATA="$PPATH/data"
+  local PPATH_EXTS="$PPATH/exts"
+
+  mkdir -p "$PPATH"
+  mkdir -p "$PPATH_DATA"
+  mkdir -p "$PPATH_EXTS"
+}
+
+remove() {
+  local CATEGORY=
+  local NAME=
+
+  while true; do
+    if [[ -z "$1" ]]; then
+      break
+    fi
+
+    case "$1" in
+    -h | --help)
+      echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+      echo
+      remove_usage
+      return
+      ;;
+    -c | --category)
+      if [[ "$2" == -* ]]; then
+        shift
+      else
+        if [[ "${CATEGORIES[*]}" =~ $2 ]]; then
+          CATEGORY="$2"
+        fi
+        shift 2
+      fi
+      ;;
+    *)
+      if [[ "$1" != -* ]] && [[ -z "$NAME" ]]; then
+        NAME="$1"
+        shift
+      else
+        shift
+        if [[ "$1" != -* ]] && [[ -n "$NAME" ]]; then
+          shift
+        fi
+      fi
+      ;;
+    esac
+  done
+
+  if [[ -z "$CATEGORY" ]]; then
+    CATEGORY=$(select_category)
+  fi
+
+  if [[ -z "$NAME" ]]; then
+    NAME=$(select_profile "$CATEGORY")
+  fi
+
+  local PPATH="$BASE_PATH/$CATEGORY/$NAME"
+  rm -rf "$PPATH"
+
+  if [[ -z "$(ls -A "$BASE_PATH/$CATEGORY")" ]]; then
+    rmdir "$BASE_PATH/$CATEGORY" 1>/dev/null
+  fi
+}
+
+list() {
+  local CATEGORY=
+
+  while true; do
+    if [[ -z "$1" ]]; then
+      break
+    fi
+
+    case "$1" in
+    -h | --help)
+      echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+      echo
+      list_usage
+      return
+      ;;
+    -c | --category)
+      if [[ "$2" == -* ]]; then
+        shift
+      else
+        if [[ "${CATEGORIES[*]}" =~ $2 ]]; then
+          CATEGORY="$2"
+        fi
+        shift 2
+      fi
+      ;;
+    *) shift ;;
+    esac
+  done
+
+  if [[ -n "$CATEGORY" ]]; then
+    print_category_profiles "$CATEGORY"
+  else
+    local values=("$BASE_PATH"/*)
+    if [[ -z "$(ls -A "$BASE_PATH")" ]]; then return; fi
+    for c in "${values[@]}"; do
+      print_category_profiles "$(basename "$c")"
+      if [[ "$c" != "${values[-1]}" ]]; then
+        echo
+      fi
+    done
+  fi
+}
+
+main() {
+  local PROJECT=false
+  local TARGET_PATH=
+  local CATEGORY=
+  local NAME=
+
+  while true; do
+    if [[ -z "$1" ]]; then
+      break
+    fi
+
+    case "$1" in
+    -h | --help)
+      usage
+      return
+      ;;
+    -v | --version)
+      echo "$VERSION"
+      return
+      ;;
+    -p | --project)
+      PROJECT=true
+      shift
+      ;;
+    -c | --category)
+      if [[ "${CATEGORIES[*]}" =~ $2 ]]; then
+        CATEGORY="$2"
+      fi
+      shift 2
+      ;;
+    -n | --name)
+      NAME="$2"
+      shift 2
+      ;;
+    *)
+      if [[ "$1" != -* ]] && [[ -z "$TARGET_PATH" ]]; then
+        TARGET_PATH="$1"
+        shift
+      else
+        shift
+        if [[ "$1" != -* ]] && [[ -n "$TARGET_PATH" ]]; then
+          shift
+        fi
+      fi
+      ;;
+    esac
+  done
+
+  if [[ -z "$CATEGORY" ]]; then
+    CATEGORY=$(select_category)
+  fi
+
+  if [[ -z "$NAME" ]]; then
+    NAME=$(select_profile "$CATEGORY")
+  fi
+
+  if [[ ! -d "$BASE_PATH/$CATEGORY/$NAME" ]]; then
+    echo -e "Profile $FGMagenta$NAME$RESET does not exist in category $FGMagenta$CATEGORY$RESET"
+    exit 1
+  fi
+
+  code "$CATEGORY" "$NAME"
+}
+
+mkdir -p "$BASE_PATH"
+case "$1" in
+n | new)
+  shift
+  new "$@"
+  ;;
+rm | remove)
+  shift
+  remove "$@"
+  ;;
+ls | list)
+  shift
+  list "$@"
+  ;;
+*) main "$@" ;;
+esac
