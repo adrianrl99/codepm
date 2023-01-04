@@ -6,20 +6,26 @@ FGBlue="\e[34m"
 FGMagenta="\e[35m"
 RESET="\e[0m"
 
+TARGET=
 VERSION="1.0.0"
 BASE_PATH="$HOME/.codepm"
-CATEGORIES=("language" "framework" "project")
+CONFIG_PATH="$BASE_PATH/settings.json"
+CATEGORIES=
+BASE_EXTENSIONS=
+BASE_PROJECT_EXTENSIONS=
 
 usage() {
   echo -e "\
-Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET
+Visual Studio Code Profile Manager $FGYellow$VERSION$RESET
 
-Usage: ${FGGreen}codepm$RESET ${FGYellow}[options]$RESET $FGMagenta<path>$RESET
+Usage: ${FGGreen}codepm$RESET ${FGYellow}[options]$RESET ${FGYellow}[command]$RESET ${FGYellow}[options]$RESET $FGMagenta<path>$RESET
 
 ${FGYellow}Commands:$RESET
   ${FGBlue}n  new$RESET          Create a new profile
   ${FGBlue}rm remove$RESET       Remove a profile
   ${FGBlue}ls list$RESET         List all profiles
+  ${FGBlue}s setup$RESET         Set default configuration (if not exists) and install dependencies
+  ${FGBlue}c category$RESET      Create, update and delete categories
 
 ${FGYellow}Options:$RESET
   -c --category   Category of the profile
@@ -35,7 +41,10 @@ $(new_usage)
 $(remove_usage)
 
 
-$(list_usage)\
+$(list_usage)
+
+
+$(category_usage)\
 "
 }
 
@@ -51,7 +60,7 @@ ${FGBlue}new$RESET ${FGYellow}Options:$RESET
 
 remove_usage() {
   echo -e "\
-${FGBlue}remove$RESET Usage: codepm ${FGBlue}remove$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
+${FGBlue}remove$RESET Usage: ${FGGreen}codepm$RESET ${FGBlue}remove$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
   
 ${FGBlue}remove$RESET ${FGYellow}Options:$RESET
   -c --category   Category of the profile
@@ -61,11 +70,26 @@ ${FGBlue}remove$RESET ${FGYellow}Options:$RESET
 
 list_usage() {
   echo -e "\
-${FGBlue}list$RESET Usage: codepm ${FGBlue}list$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
+${FGBlue}list$RESET Usage: ${FGGreen}codepm$RESET ${FGBlue}list$RESET ${FGYellow}[options]$RESET $FGMagenta<name>$RESET
   
 ${FGBlue}list$RESET ${FGYellow}Options:$RESET
   -c --category   Category of the profile
   -h --help       Print ${FGBlue}list$RESET usage\
+"
+}
+
+category_usage() {
+  echo -e "\
+${FGBlue}category$RESET Usage: ${FGGreen}codepm$RESET ${FGBlue}category$RESET ${FGYellow}[options]$RESET ${FGYellow}[command]$RESET
+  
+${FGYellow}${FGBlue}category$RESET Commands:$RESET
+  ${FGBlue}n new$RESET           Create a new category
+  ${FGBlue}u update$RESET        Update a category
+  ${FGBlue}r remove$RESET        Remove a category
+  ${FGBlue}l list$RESET          List all categories
+
+${FGBlue}category$RESET ${FGYellow}Options:$RESET
+  -h --help       Print ${FGBlue}category$RESET usage\
 "
 }
 
@@ -74,6 +98,20 @@ code() {
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
   /usr/bin/env code --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA"
+}
+
+install_extension() {
+  local PPATH="$BASE_PATH/$1/$2"
+  local PPATH_DATA="$PPATH/data"
+  local PPATH_EXTS="$PPATH/exts"
+  /usr/bin/env code --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" --install-extension "$3"
+}
+
+disable_extension() {
+  local PPATH="$BASE_PATH/$1/$2"
+  local PPATH_DATA="$PPATH/data"
+  local PPATH_EXTS="$PPATH/exts"
+  /usr/bin/env code --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" --disable-extension "$3"
 }
 
 select_category() {
@@ -115,13 +153,16 @@ read_name() {
   local NAME=
   read -p "Enter name: " -r NAME
   echo "$NAME"
-  return
+}
+
+read_category() {
+  local NAME=
+  read -p "Enter category: " -r NAME
+  echo "$NAME"
 }
 
 print_category_profiles() {
-  if [[ ! -d "$BASE_PATH/$1" ]]; then return; fi
   echo -e "$FGBlue$1$RESET profiles":
-
   local values=("$BASE_PATH/$1"/*)
   for p in "${values[@]}"; do
     echo -n -e "$FGYellow"
@@ -192,6 +233,12 @@ new() {
   mkdir -p "$PPATH"
   mkdir -p "$PPATH_DATA"
   mkdir -p "$PPATH_EXTS"
+
+  local EXTENSIONS=("${BASE_EXTENSIONS[@]}" "${BASE_PROJECT_EXTENSIONS[@]}")
+
+  for e in "${EXTENSIONS[@]}"; do
+    install_extension "$CATEGORY" "$NAME" "$e"
+  done
 }
 
 remove() {
@@ -205,7 +252,7 @@ remove() {
 
     case "$1" in
     -h | --help)
-      echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+      echo -e "Visual Studio Code Profile Manager $FGYellow$VERSION$RESET"
       echo
       remove_usage
       return
@@ -280,11 +327,13 @@ list() {
   done
 
   if [[ -n "$CATEGORY" ]]; then
+    if [[ ! -d "$BASE_PATH/$CATEGORY" ]] || [[ ! "$(ls -A "$BASE_PATH/$CATEGORY")" ]]; then return; fi
     print_category_profiles "$CATEGORY"
   else
     local values=("$BASE_PATH"/*)
     if [[ -z "$(ls -A "$BASE_PATH")" ]]; then return; fi
     for c in "${values[@]}"; do
+      if [[ ! -d "$BASE_PATH/$(basename "$c")" ]] || [[ ! "$(ls -A "$BASE_PATH/$(basename "$c")")" ]]; then continue; fi
       print_category_profiles "$(basename "$c")"
       if [[ "$c" != "${values[-1]}" ]]; then
         echo
@@ -357,7 +406,130 @@ main() {
   code "$CATEGORY" "$NAME"
 }
 
-mkdir -p "$BASE_PATH"
+setup() {
+  EXTS=()
+  which jq >/dev/null || EXTS+=("jq")
+  if [[ -n "${EXTS[*]}" ]]; then
+    case "$TARGET" in
+    darwin) brew install "${EXTS[*]}" ;;
+    debian) apt install "${EXTS[*]}" ;;
+    archlinux) pacman -S "${EXTS[*]}" ;;
+    *) echo -e "Please install ${FGGreen}jq$RESET manually" ;;
+    esac
+  fi
+
+  local DEFAULT_BASE_EXTENSIONS=(
+    "teabyii.ayu"
+    "aaron-bond.better-comments"
+    "usernamehw.errorl"
+    "mkxml.vscode-filesize"
+    "miguelsolorio.fluent-icons"
+    "christian-kohler.path-intellisense"
+    "miguelsolorio.symbols"
+    "wayou.vscode-todo-highlight"
+  )
+  local DEFAULT_BASE_PROJECT_EXTENSIONS=(
+    "mikestead.dotenv"
+    "editorconfig.editorco"
+    "ultram4rine.vscode-choosealicense"
+    "donjayamanne.githist"
+    "codezombiech.gitig"
+    "eamodio.gitlens"
+    "yzhang.markdown-all-in-one"
+    "bierner.markdown-mermaid"
+    "DavidAnson.vscode-markdownlint"
+    "jock.svg"
+    "SimonSiefke.svg-preview"
+  )
+
+  if [[ ! -d "$BASE_PATH" ]]; then mkdir -p "$BASE_PATH"; fi
+  if [[ ! -f "$CONFIG_PATH" ]]; then echo "{}" >"$CONFIG_PATH"; fi
+  jq --arg BASE_EXTENSIONS "${DEFAULT_BASE_EXTENSIONS[*]}" \
+    'if (has("BASE_EXTENSIONS") | not) or (.BASE_EXTENSIONS | length == 0 )
+     then setpath(["BASE_EXTENSIONS"]; $BASE_EXTENSIONS | split(" ")) 
+     else . end' <"$CONFIG_PATH" >/tmp/settings.json && mv /tmp/settings.json "$CONFIG_PATH"
+
+  jq --arg BASE_PROJECT_EXTENSIONS "${DEFAULT_BASE_PROJECT_EXTENSIONS[*]}" \
+    'if (has("BASE_PROJECT_EXTENSIONS") | not) or (.BASE_PROJECT_EXTENSIONS | length == 0 )
+     then setpath(["BASE_PROJECT_EXTENSIONS"]; $BASE_PROJECT_EXTENSIONS | split(" ")) 
+     else . end' <"$CONFIG_PATH" >/tmp/settings.json && mv /tmp/settings.json "$CONFIG_PATH"
+
+}
+
+category() {
+  CATEGORY=$2
+  NAME=$3
+  case "$1" in
+  n | new)
+    if [[ -z "$CATEGORY" ]]; then
+      CATEGORY=$(read_category)
+    fi
+    mkdir -p "$BASE_PATH/$CATEGORY"
+    ;;
+  u | update)
+    if [[ -z "$CATEGORY" ]]; then
+      CATEGORY=$(select_category)
+    fi
+    if [[ -z "$NAME" ]]; then
+      NAME=$(read_category)
+    fi
+    mv "$BASE_PATH/$CATEGORY" "$BASE_PATH/$NAME"
+    ;;
+  r | remove)
+    if [[ -z "$CATEGORY" ]]; then
+      CATEGORY=$(select_category)
+    fi
+    rm -rf "$BASE_PATH/${CATEGORY:?}"
+    ;;
+  l | list)
+    echo "${CATEGORIES[*]}"
+    ;;
+  -h | --help)
+    echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+    echo
+    category_usage
+    ;;
+  *)
+    echo -e "Visual Studio Code Profile Manager ${FGYellow}$VERSION$RESET"
+    echo
+    category_usage
+    ;;
+  esac
+}
+
+# Ensure all dependencies are installed
+if [[ "$1" != 's' ]] && [[ "$1" != 'setup' ]]; then
+  which code >/dev/null || {
+    echo -e "Please install ${FGGreen}code$RESET manually or try with ${FGGreen}codepm$RESET ${FGBlue}setup$RESET"
+    exit 1
+  }
+  which jq >/dev/null || {
+    echo -e "Please install ${FGGreen}jq$RESET manually or try with ${FGGreen}codepm$RESET ${FGBlue}setup$RESET"
+    exit 1
+  }
+
+  read -r -a CATEGORIES <<<"$(find "$BASE_PATH" -type d -depth 1 | xargs basename -a | xargs)"
+
+  read -r -a BASE_EXTENSIONS <<<"$(jq -r '@sh "\(.BASE_EXTENSIONS)"' <"$CONFIG_PATH")"
+  if [[ "${BASE_EXTENSIONS[*]}" == "null" ]]; then BASE_EXTENSIONS=(); fi
+
+  read -r -a BASE_PROJECT_EXTENSIONS <<<"$(jq -r '@sh "\(.BASE_PROJECT_EXTENSIONS)"' <"$CONFIG_PATH")"
+  if [[ "${BASE_PROJECT_EXTENSIONS[*]}" == "null" ]]; then BASE_PROJECT_EXTENSIONS=(); fi
+fi
+
+case $(uname) in
+'Darwin') TARGET=darwin ;;
+'Linux')
+  which apt && TARGET=debian
+  which pacman && TARGET=archlinux
+  ;;
+esac
+
+if [[ -z "$1" ]]; then
+  usage
+  exit 0
+fi
+
 case "$1" in
 n | new)
   shift
@@ -370,6 +542,14 @@ rm | remove)
 ls | list)
   shift
   list "$@"
+  ;;
+s | setup)
+  shift
+  setup
+  ;;
+c | category)
+  shift
+  category "$@"
   ;;
 *) main "$@" ;;
 esac
