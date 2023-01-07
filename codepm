@@ -31,6 +31,8 @@ ${Yellow}Commands:$RESET
   ${Blue}c category$RESET      Create, update and delete categories
   ${Blue}cc clear-cache$RESET  Clear ${Green}codepm$RESET cache
   ${Blue}ccf clear-cache-full  Clear full ${Green}codepm$RESET cache
+  ${Blue}i install$RESET       Install codepm
+  ${Blue}ui uninstall          Uninstall codepm
 
 ${Yellow}Options:$RESET
   -c --category   Category of the profile
@@ -571,6 +573,33 @@ clear_cache() {
   fi
 }
 
+install() {
+  case "$TARGET" in
+  darwin) sh -c "sudo install -o root -g wheel $0 /usr/local/bin/codepm" ;;
+  *) echo "Please copy this script to any location in PATH" ;;
+  esac
+}
+
+uninstall() {
+  while true; do
+    read -r -p "Do you wish to uninstall this program? (y/n) " yn
+    case $yn in
+    [Yy]*)
+      if [[ -d "$BASE_PATH" ]]; then
+        rm -rf "$BASE_PATH"
+      fi
+      if [[ -f "/usr/local/bin/codepm" ]]; then
+        sh -c "sudo rm /usr/local/bin/codepm"
+      fi
+      echo "${Green}codepm$RESET was uninstalled"
+      break
+      ;;
+    [Nn]*) exit ;;
+    *) echo "Please answer yes or no." ;;
+    esac
+  done
+}
+
 # Ensure all dependencies are installed
 if [[ "$1" != 's' ]] && [[ "$1" != 'setup' ]]; then
   which code >/dev/null || {
@@ -617,21 +646,14 @@ l | list)
   shift
   list "$@"
   ;;
-s | setup)
-  shift
-  setup
-  ;;
+s | setup) setup ;;
 c | category)
   shift
   category "$@"
   ;;
-cc | clear-cache)
-  shift
-  clear_cache
-  ;;
-ccf | clear-cache-full)
-  shift
-  clear_cache true
-  ;;
+cc | clear-cache) clear_cache ;;
+ccf | clear-cache-full) clear_cache true ;;
+i | install) install ;;
+ui | uninstall) uninstall ;;
 *) main "$@" ;;
 esac
