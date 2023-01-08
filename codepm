@@ -14,8 +14,29 @@ PROFILES_PATH="$BASE_PATH/profiles"
 CACHE_PATH="$BASE_PATH/cache"
 CONFIG_PATH="$BASE_PATH/settings.json"
 CATEGORIES=
-BASE_EXTENSIONS=
-BASE_PROJECT_EXTENSIONS=
+DEFAULT_BASE_EXTENSIONS=(
+  "teabyii.ayu"
+  "aaron-bond.better-comments"
+  "usernamehw.errorlens"
+  "mkxml.vscode-filesize"
+  "miguelsolorio.fluent-icons"
+  "christian-kohler.path-intellisense"
+  "miguelsolorio.symbols"
+  "wayou.vscode-todo-highlight"
+)
+DEFAULT_PROJECT_EXTENSIONS=(
+  "mikestead.dotenv"
+  "EditorConfig.EditorConfig"
+  "ultram4rine.vscode-choosealicense"
+  "donjayamanne.githistory"
+  "codezombiech.gitignore"
+  "eamodio.gitlens"
+  "yzhang.markdown-all-in-one"
+  "bierner.markdown-mermaid"
+  "DavidAnson.vscode-markdownlint"
+  "jock.svg"
+  "SimonSiefke.svg-preview"
+)
 
 usage() {
   echo -e "\
@@ -24,22 +45,22 @@ Visual Studio Code Profile Manager $Yellow$VERSION$RESET
 Usage: ${Green}codepm$RESET ${Yellow}[options]$RESET ${Yellow}[command]$RESET ${Yellow}[options]$RESET $Magenta<path>$RESET
 
 ${Yellow}Commands:$RESET
-  ${Blue}n  new$RESET          Create a new profile
-  ${Blue}r remove$RESET        Remove a profile
-  ${Blue}l list$RESET          List all profiles
-  ${Blue}s setup$RESET         Set default configuration (if not exists) and install dependencies
-  ${Blue}c category$RESET      Create, update and delete categories
-  ${Blue}cc clear-cache$RESET  Clear ${Green}codepm$RESET cache
-  ${Blue}ccf clear-cache-full  Clear full ${Green}codepm$RESET cache
-  ${Blue}i install$RESET       Install codepm
-  ${Blue}ui uninstall          Uninstall codepm
+  ${Blue}n  new$RESET                 Create a new profile
+  ${Blue}r remove$RESET               Remove a profile
+  ${Blue}l list$RESET                 List all profiles
+  ${Blue}s setup$RESET                Set default configuration and cache base extensions
+  ${Blue}c category$RESET             Create, update and delete categories
+  ${Blue}cc clear-cache$RESET         Clear ${Green}codepm$RESET cache
+  ${Blue}ccf clear-cache-full$RESET   Clear full ${Green}codepm$RESET cache
+  ${Blue}i install$RESET              Install ${Green}codepm$RESET
+  ${Blue}ui uninstall$RESET           Uninstall ${Green}codepm$RESET
+  ${Blue}h help$RESET                 Print usage.
 
 ${Yellow}Options:$RESET
-  -c --category   Category of the profile
-  -n --name       Name of the profile
-  -p --project    Open editor in project mode
-  -v --version    Print version
-  -h --help       Print usage.
+  -c --category          Category of the profile
+  -n --name              Name of the profile
+  -v --version           Print version
+  -h --help              Print usage.
 
 
 $(new_usage)
@@ -60,8 +81,10 @@ new_usage() {
 ${Blue}new$RESET Usage: ${Green}codepm$RESET ${Blue}new$RESET ${Yellow}[options]$RESET $Magenta<name>$RESET
   
 ${Blue}new$RESET ${Yellow}Options:$RESET
-  -c --category   Category of the profile
-  -h --help       Print ${Blue}new$RESET usage\
+  -c --category          Category of the profile
+  -e --extend            Profiles to extend, format <category>:<profile>, sep by comma (ex: language:bash,language:zsh)
+  -n --no-default        Don't extend default extensions
+  -h --help              Print ${Blue}new$RESET usage\
 "
 }
 
@@ -70,8 +93,8 @@ remove_usage() {
 ${Blue}remove$RESET Usage: ${Green}codepm$RESET ${Blue}remove$RESET ${Yellow}[options]$RESET $Magenta<name>$RESET
   
 ${Blue}remove$RESET ${Yellow}Options:$RESET
-  -c --category   Category of the profile
-  -h --help       Print ${Blue}remove$RESET usage\
+  -c --category          Category of the profile
+  -h --help              Print ${Blue}remove$RESET usage\
 "
 }
 
@@ -80,8 +103,8 @@ list_usage() {
 ${Blue}list$RESET Usage: ${Green}codepm$RESET ${Blue}list$RESET ${Yellow}[options]$RESET $Magenta<name>$RESET
   
 ${Blue}list$RESET ${Yellow}Options:$RESET
-  -c --category   Category of the profile
-  -h --help       Print ${Blue}list$RESET usage\
+  -c --category          Category of the profile
+  -h --help              Print ${Blue}list$RESET usage\
 "
 }
 
@@ -89,35 +112,52 @@ category_usage() {
   echo -e "\
 ${Blue}category$RESET Usage: ${Green}codepm$RESET ${Blue}category$RESET ${Yellow}[options]$RESET ${Yellow}[command]$RESET
   
-${Yellow}${Blue}category$RESET Commands:$RESET
-  ${Blue}n new$RESET           Create a new category
-  ${Blue}u update$RESET        Update a category
-  ${Blue}r remove$RESET        Remove a category
-  ${Blue}l list$RESET          List all categories
+${Blue}category$RESET ${Yellow}Commands:$RESET
+  ${Blue}n new$RESET                  Create a new category
+  ${Blue}u update$RESET               Update a category
+  ${Blue}r remove$RESET               Remove a category
+  ${Blue}l list$RESET                 List all categories
 
 ${Blue}category$RESET ${Yellow}Options:$RESET
   -h --help       Print ${Blue}category$RESET usage\
 "
 }
 
-get_extensions() {
-  curl -fsd "$1" -L "$API_URL" -H 'Content-Type: application/json' -H 'Accept: application/json;api-version=3.0-preview.1'
-}
-
 code() {
-  local PPATH="$PROFILES_PATH/$1/$2"
+  local CATEGORY="$1"
+  local PROFILE="$2"
+  local TARGET_PATH="$3"
+  local PPATH="$PROFILES_PATH/$CATEGORY/$PROFILE"
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
-  /usr/bin/env code --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA"
+  local DISABLE=()
+
+  if [[ -f "$TARGET_PATH" ]]; then
+    for ext in $(project_extensions_names "$CATEGORY" "$PROFILE"); do
+      DISABLE+=("--disable-extension" "$ext")
+    done
+  fi
+
+  /usr/bin/env code --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" "${DISABLE[@]}" "$TARGET_PATH"
 }
 
 cache_extensions() {
+  local TO_CACHE=()
   local EXTENSIONS=()
+
+  for ext in "$@"; do
+    if [[ ! -f "$CACHE_PATH/$ext/version" ]] || [[ ! -f "$CACHE_PATH/$ext/$ext.$(cat "$CACHE_PATH/$ext/version").vsix" ]]; then
+      TO_CACHE+=("$ext")
+    fi
+  done
+
+  if [[ -z "${TO_CACHE[*]}" ]]; then return; fi
+
   echo "Caching extensions"
   eval "$(curl -sfL "$API_URL" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json;api-version=3.0-preview.1' \
-    -d "$(jq --arg exts "$*" --arg flags $((0x0 | 0x2 | 0x200)) \
+    -d "$(jq --arg exts "${TO_CACHE[@]}" --arg flags $((0x0 | 0x2 | 0x200)) \
       ' setpath(["filters", 0, "criteria"]; $exts | split(" ") | map({ filterType: 7, "value": . }) + [{"filterType": 8, "value": "Microsoft.VisualStudio.Code"}])
       | setpath(["assetTypes"]; ["Microsoft.VisualStudio.Services.VSIXPackage"])
       | setpath(["flags"]; $flags|tonumber)' \
@@ -136,38 +176,39 @@ cache_extensions() {
     eval "$(jq -r '@sh "name=\(.name)"' <<<"$ext")"
     eval "$(jq -r '@sh "version=\(.version)"' <<<"$ext")"
     eval "$(jq -r '@sh "url=\(.url)"' <<<"$ext")"
-    path="cache/$name"
+    path="$CACHE_PATH/$name"
 
     if [[ ! -d "$path" ]]; then mkdir -p "$path"; fi
     echo -e "Downloading $Blue$name$RESET $Yellow$version$RESET"
     curl -# -C - -L "$url" -o "$path/$name.$version.vsix"
     echo "$version" >"$path/version"
   done
-  echo "Finish caching"
 }
 
 install_extensions() {
   local PPATH="$PROFILES_PATH/$1/$2"
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
+  local EXTS=()
   shift 2
 
-  echo -e "Installing $Magenta${#@}$RESET extensions"
-  for e in "$@"; do
-    if [[ -f "$CACHE_PATH/$e/version" ]] || [[ -f "$CACHE_PATH/$e/$e.$(cat "$CACHE_PATH/$e/version").vsix" ]]; then
-      /usr/bin/env code --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" --install-extension "$CACHE_PATH/$e/$e.$(cat "$CACHE_PATH/$e/version").vsix" &>/dev/null
-      echo -e "Extension $Blue$e$RESET $Yellow$(cat "$CACHE_PATH/$e/version")$RESET installed"
-    fi
-  done
+  if [[ -n "$*" ]]; then
+    for e in "$@"; do
+      if [[ -f "$CACHE_PATH/$e/version" ]] || [[ -f "$CACHE_PATH/$e/$e.$(cat "$CACHE_PATH/$e/version").vsix" ]]; then
+        EXTS+=("--install-extension" "$CACHE_PATH/$e/$e.$(cat "$CACHE_PATH/$e/version").vsix")
+      fi
+    done
 
-  echo "Finish extensions installation"
+    /usr/bin/env code --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" "${EXTS[@]}"
+  fi
 }
 
-disable_extension() {
-  local PPATH="$PROFILES_PATH/$1/$2"
-  local PPATH_DATA="$PPATH/data"
-  local PPATH_EXTS="$PPATH/exts"
-  /usr/bin/env code --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" --disable-extension "$3"
+profile_extensions() {
+  local CATEGORY="$1"
+  local NAME="$2"
+  local EXTS=()
+
+  echo "${EXTS[@]}"
 }
 
 select_category() {
@@ -217,6 +258,96 @@ read_category() {
   echo "$NAME"
 }
 
+extensions_with_versions() {
+  local EXTS=()
+
+  for ext in "$@"; do
+    if [[ -f "$CACHE_PATH/$ext/version" ]]; then
+      EXTS+=("$ext@$(cat "$CACHE_PATH/$ext/version")")
+    fi
+  done
+
+  echo "${EXTS[@]}"
+}
+
+extension_name() {
+  local arr=()
+  IFS='@'
+  read -r -a arr <<<"$1"
+  unset IFS
+  echo "${arr[0]}"
+}
+
+extends_extensions_names() {
+  local EXTS=()
+  local EXTS_VER=()
+
+  for req in "$@"; do
+    if [[ "$req" == "default" ]]; then
+      eval "$(jq -r '@sh "EXTS_VER+=(\(.extensions.base + .extensions.project))"' <"$CONFIG_PATH")"
+    else
+      local CATEGORY=
+      local PROFILE=
+      local arr=()
+      IFS=':'
+      read -r -a arr <<<"$1"
+      unset IFS
+      CATEGORY="${arr[0]}"
+      PROFILE="${arr[1]}"
+      local PROFILE_CONFIG_PATH="$PROFILES_PATH/$CATEGORY/$PROFILE/settings.json"
+      if [[ -f "$PROFILE_CONFIG_PATH" ]]; then
+        eval "$(jq -r '@sh "EXTS_VER+=(\(.extensions.base + .extensions.project))"' <"$PROFILE_CONFIG_PATH")"
+      fi
+    fi
+  done
+
+  for ext in "${EXTS_VER[@]}"; do
+    EXTS+=("$(extension_name "$ext")")
+  done
+
+  echo "${EXTS[@]}"
+}
+
+project_extensions_names() {
+  local CATEGORY="$1"
+  local PROFILE="$2"
+  local PPATH="$PROFILES_PATH/$CATEGORY/$PROFILE"
+  local PPATH_CONFIG="$PPATH/settings.json"
+  local PPATH_DATA="$PPATH/data"
+  local PPATH_EXTS="$PPATH/exts"
+
+  local EXTENDS=()
+  local EXTS_VER=()
+  local EXTS=()
+
+  eval "$(jq -r '@sh "EXTENDS=(\(.extends // [])); EXTS_VER=(\(.extensions.project // []))"' <"$PPATH_CONFIG")"
+
+  for req in "${EXTENDS[@]}"; do
+    if [[ "$req" == "default" ]]; then
+      eval "$(jq -r '@sh "EXTS_VER+=(\(.extensions.project))"' <"$CONFIG_PATH")"
+    else
+      local CATEGORY=
+      local PROFILE=
+      local arr=()
+      IFS=':'
+      read -r -a arr <<<"$1"
+      unset IFS
+      CATEGORY="${arr[0]}"
+      PROFILE="${arr[1]}"
+      local PROFILE_CONFIG_PATH="$PROFILES_PATH/$CATEGORY/$PROFILE/settings.json"
+      if [[ -f "$PROFILE_CONFIG_PATH" ]]; then
+        eval "$(jq -r '@sh "EXTS_VER+=(\(.extensions.project))"' <"$PROFILE_CONFIG_PATH")"
+      fi
+    fi
+  done
+
+  for ext in "${EXTS_VER[@]}"; do
+    EXTS+=("$(extension_name "$ext")")
+  done
+
+  echo "${EXTS[@]}"
+}
+
 print_category_profiles() {
   echo -e "$Blue$1$RESET profiles":
   local values=("$PROFILES_PATH/$1"/*)
@@ -237,6 +368,8 @@ print_category_profiles() {
 new() {
   local CATEGORY=
   local NAME=
+  local NO_DEFAULT=false
+  local EXTENDS=()
 
   while true; do
     if [[ -z "$1" ]]; then
@@ -258,6 +391,24 @@ new() {
           CATEGORY="$2"
         fi
         shift 2
+      fi
+      ;;
+    -e | --extend)
+      if [[ "$2" == -* ]]; then
+        shift
+      else
+        IFS=','
+        read -r -a EXTENDS <<<"$2"
+        unset IFS
+        shift 2
+      fi
+      ;;
+    -n | --no-default)
+      if [[ "$2" == -* ]]; then
+        shift
+      else
+        NO_DEFAULT=true
+        shift
       fi
       ;;
     *)
@@ -282,6 +433,8 @@ new() {
     NAME=$(read_name)
   fi
 
+  echo -e "Creating profile $Blue$NAME$RESET in category $Yellow$CATEGORY$RESET"
+
   local PPATH="$PROFILES_PATH/$CATEGORY/$NAME"
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
@@ -290,22 +443,25 @@ new() {
   mkdir -p "$PPATH_DATA"
   mkdir -p "$PPATH_EXTS"
 
-  local EXTENSIONS=("${BASE_EXTENSIONS[@]}" "${BASE_PROJECT_EXTENSIONS[@]}")
-  local TO_CACHE=()
+  if [[ "$NO_DEFAULT" == false ]]; then
+    EXTENDS+=("default" "${EXTENDS[@]}")
+  fi
 
-  for ext in "${EXTENSIONS[@]}"; do
-    if [[ ! -f "$CACHE_PATH/$ext/version" ]] || [[ ! -f "$CACHE_PATH/$ext/$ext.$(cat "$CACHE_PATH/$ext/version").vsix" ]]; then
-      TO_CACHE+=("$ext")
-    fi
+  local EXTENSIONS=()
+  for ext in $(extends_extensions_names "${EXTENDS[@]}"); do
+    EXTENSIONS+=("$ext")
   done
 
-  if [[ -n "${TO_CACHE[*]}" ]]; then
-    cache_extensions "${TO_CACHE[@]}"
-  fi
+  cache_extensions "${EXTENSIONS[@]}"
 
-  if [[ -n "${EXTENSIONS[*]}" ]]; then
-    install_extensions "$CATEGORY" "$NAME" "${EXTENSIONS[@]}"
-  fi
+  jq --arg EXTENDS "${EXTENDS[@]}" \
+    ' setpath(["extensions"]; {"base": [], "project": []})
+       | setpath(["extends"]; $EXTENDS | split(" "))' \
+    <<<'{}' >"$PPATH/settings.json"
+
+  install_extensions "$CATEGORY" "$NAME" "${EXTENSIONS[@]}"
+
+  echo -e "Profile $Blue$NAME$RESET created in category $Yellow$CATEGORY$RESET"
 }
 
 remove() {
@@ -406,7 +562,6 @@ list() {
 }
 
 main() {
-  local PROJECT=false
   local TARGET_PATH=
   local CATEGORY=
   local NAME=
@@ -424,10 +579,6 @@ main() {
     -v | --version)
       echo "$VERSION"
       return
-      ;;
-    -p | --project)
-      PROJECT=true
-      shift
       ;;
     -c | --category)
       if [[ "${CATEGORIES[*]}" =~ $2 ]]; then
@@ -466,7 +617,7 @@ main() {
     exit 1
   fi
 
-  code "$CATEGORY" "$NAME"
+  code "$CATEGORY" "$NAME" "$TARGET_PATH"
 }
 
 setup() {
@@ -481,44 +632,14 @@ setup() {
     esac
   fi
 
-  local DEFAULT_BASE_EXTENSIONS=(
-    "teabyii.ayu"
-    "aaron-bond.better-comments"
-    "usernamehw.errorlens"
-    "mkxml.vscode-filesize"
-    "miguelsolorio.fluent-icons"
-    "christian-kohler.path-intellisense"
-    "miguelsolorio.symbols"
-    "wayou.vscode-todo-highlight"
-  )
-  local DEFAULT_BASE_PROJECT_EXTENSIONS=(
-    "mikestead.dotenv"
-    "EditorConfig.EditorConfig"
-    "ultram4rine.vscode-choosealicense"
-    "donjayamanne.githistory"
-    "codezombiech.gitignore"
-    "eamodio.gitlens"
-    "yzhang.markdown-all-in-one"
-    "bierner.markdown-mermaid"
-    "DavidAnson.vscode-markdownlint"
-    "jock.svg"
-    "SimonSiefke.svg-preview"
-  )
+  cache_extensions "${DEFAULT_BASE_EXTENSIONS[@]}" "${DEFAULT_PROJECT_EXTENSIONS[@]}"
 
-  if [[ ! -d "$BASE_PATH" ]]; then mkdir -p "$BASE_PATH"; fi
-  if [[ ! -d "$PROFILES_PATH" ]]; then mkdir -p "$PROFILES_PATH"; fi
-  if [[ ! -d "$CACHE_PATH" ]]; then mkdir -p "$CACHE_PATH"; fi
-  if [[ ! -f "$CONFIG_PATH" ]]; then echo "{}" >"$CONFIG_PATH"; fi
-  jq --arg BASE_EXTENSIONS "${DEFAULT_BASE_EXTENSIONS[*]}" \
-    'if (has("BASE_EXTENSIONS") | not) or (.BASE_EXTENSIONS | length == 0 )
-     then setpath(["BASE_EXTENSIONS"]; $BASE_EXTENSIONS | split(" ")) 
-     else . end' <"$CONFIG_PATH" >/tmp/settings.json && mv /tmp/settings.json "$CONFIG_PATH"
-
-  jq --arg BASE_PROJECT_EXTENSIONS "${DEFAULT_BASE_PROJECT_EXTENSIONS[*]}" \
-    'if (has("BASE_PROJECT_EXTENSIONS") | not) or (.BASE_PROJECT_EXTENSIONS | length == 0 )
-     then setpath(["BASE_PROJECT_EXTENSIONS"]; $BASE_PROJECT_EXTENSIONS | split(" ")) 
-     else . end' <"$CONFIG_PATH" >/tmp/settings.json && mv /tmp/settings.json "$CONFIG_PATH"
-
+  jq --arg BASE_EXTENSIONS "$(extensions_with_versions "${DEFAULT_BASE_EXTENSIONS[@]}")" --arg PROJECT_EXTENSIONS "$(extensions_with_versions "${DEFAULT_PROJECT_EXTENSIONS[@]}")" \
+    'setpath(["extensions"]; {
+              "base": $BASE_EXTENSIONS | split(" "),
+              "project": $PROJECT_EXTENSIONS | split(" "),
+            })' \
+    <<<"{}" >"$CONFIG_PATH"
 }
 
 category() {
@@ -600,6 +721,11 @@ uninstall() {
   done
 }
 
+if [[ ! -d "$BASE_PATH" ]]; then mkdir -p "$BASE_PATH"; fi
+if [[ ! -d "$PROFILES_PATH" ]]; then mkdir -p "$PROFILES_PATH"; fi
+if [[ ! -d "$CACHE_PATH" ]]; then mkdir -p "$CACHE_PATH"; fi
+if [[ ! -f "$CONFIG_PATH" ]]; then echo "{}" >"$CONFIG_PATH"; fi
+
 # Ensure all dependencies are installed
 if [[ "$1" != 's' ]] && [[ "$1" != 'setup' ]]; then
   which code >/dev/null || {
@@ -610,15 +736,9 @@ if [[ "$1" != 's' ]] && [[ "$1" != 'setup' ]]; then
     echo -e "Please install ${Green}jq$RESET manually or try with ${Green}codepm$RESET ${Blue}setup$RESET"
     exit 1
   }
-
-  read -ra CATEGORIES <<<"$(find "$PROFILES_PATH" -type d -depth 1 | xargs basename -a | xargs)"
-
-  eval "$(jq -r '@sh "BASE_EXTENSIONS=(\(.BASE_EXTENSIONS))"' <"$CONFIG_PATH")"
-  if [[ "${BASE_EXTENSIONS[*]}" == "null" ]]; then BASE_EXTENSIONS=(); fi
-
-  eval "$(jq -r '@sh "BASE_PROJECT_EXTENSIONS=(\(.BASE_PROJECT_EXTENSIONS))"' <"$CONFIG_PATH")"
-  if [[ "${BASE_PROJECT_EXTENSIONS[*]}" == "null" ]]; then BASE_PROJECT_EXTENSIONS=(); fi
 fi
+
+read -ra CATEGORIES <<<"$(find "$PROFILES_PATH" -type d -depth 1 | xargs basename -a | xargs)"
 
 case $(uname) in
 'Darwin') TARGET=darwin ;;
@@ -634,6 +754,9 @@ if [[ -z "$1" ]]; then
 fi
 
 case "$1" in
+h | help)
+  usage
+  ;;
 n | new)
   shift
   new "$@"
