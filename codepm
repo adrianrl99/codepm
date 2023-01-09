@@ -130,15 +130,35 @@ code() {
   local PPATH="$PROFILES_PATH/$CATEGORY/$PROFILE"
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
+  local PPATH_CONFIG="$PPATH_DATA/User/settings.json"
   local DISABLE=()
+  local CONFIG=
+  CONFIG="$(cat "$PPATH_CONFIG")"
+  echo "$CONFIG"
 
   if [[ -f "$TARGET_PATH" ]]; then
     for ext in $(project_extensions_names "$CATEGORY" "$PROFILE"); do
       DISABLE+=("--disable-extension" "$ext")
     done
+
+    jq ' setpath(["breadcrumbs.enabled"]; false)
+       | setpath(["editor.minimap.enabled"]; false)
+       | setpath(["workbench.statusBar.visible"]; false)
+       | setpath(["workbench.activityBar.visible"]; false)
+       | setpath(["workbench.layoutControl.enabled"]; false)
+       | setpath(["workbench.editor.showTabs"]; false)' \
+      <<<"$CONFIG" >"$PPATH_CONFIG"
+  else
+    jq ' setpath(["breadcrumbs.enabled"]; true)
+       | setpath(["editor.minimap.enabled"]; true)
+       | setpath(["workbench.statusBar.visible"]; true)
+       | setpath(["workbench.activityBar.visible"]; true)
+       | setpath(["workbench.layoutControl.enabled"]; true)
+       | setpath(["workbench.editor.showTabs"]; true)' \
+      <<<"$CONFIG" >"$PPATH_CONFIG"
   fi
 
-  /usr/bin/env code --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" "${DISABLE[@]}" "$TARGET_PATH"
+  /usr/bin/env code --reuse-window --max-memory 2048 --locale en-US --sync off --extensions-dir "$PPATH_EXTS" --user-data-dir "$PPATH_DATA" "${DISABLE[@]}" "$TARGET_PATH"
 }
 
 cache_extensions() {
@@ -438,6 +458,7 @@ new() {
   local PPATH="$PROFILES_PATH/$CATEGORY/$NAME"
   local PPATH_DATA="$PPATH/data"
   local PPATH_EXTS="$PPATH/exts"
+  local PPATH_CONFIG="$PPATH_DATA/User/settings.json"
 
   mkdir -p "$PPATH"
   mkdir -p "$PPATH_DATA"
@@ -460,6 +481,19 @@ new() {
     <<<'{}' >"$PPATH/settings.json"
 
   install_extensions "$CATEGORY" "$NAME" "${EXTENSIONS[@]}"
+
+  echo '{
+      "editor.accessibilitySupport": "off",
+      "update.mode": "none",
+      "workbench.colorTheme": "Ayu Dark",
+      "workbench.iconTheme": "symbols",
+      "workbench.productIconTheme": "fluent-icons",
+      "window.title": "language - bash | ${activeEditorShort}${separator}${rootName}",
+      "symbols.hidesExplorerArrows": false,
+      "telemetry.telemetryLevel": "off",
+      "terminal.integrated.defaultProfile.linux": "zsh",
+      "terminal.integrated.fontFamily": "JetBrainsMono Nerd Font"
+  }' >"$PPATH_CONFIG"
 
   echo -e "Profile $Blue$NAME$RESET created in category $Yellow$CATEGORY$RESET"
 }
